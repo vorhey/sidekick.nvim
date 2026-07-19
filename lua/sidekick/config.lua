@@ -81,10 +81,15 @@ local defaults = {
       --- Defaults to `vim.cmd.wincmd`. Used by the `nav_*` keymaps.
       nav = nil,
     },
+
     ---@class sidekick.cli.Mux
-    ---@field backend? "tmux"|"zellij" Multiplexer backend to persist CLI sessions
+    ---@field backend? "tmux"|"zellij"|"wezterm"|fun():string Multiplexer backend to persist CLI sessions
     mux = {
-      backend = vim.env.ZELLIJ and "zellij" or "tmux", -- default to tmux unless zellij is detected
+      -- zellij when running inside it, otherwise tmux, or wezterm when tmux is not installed
+      backend = vim.env.ZELLIJ and "zellij"
+        or vim.fn.executable("tmux") == 1 and "tmux"
+        or vim.fn.executable("wezterm") == 1 and "wezterm"
+        or "tmux",
       enabled = false,
       -- terminal: new sessions will be created for each CLI tool and shown in a Neovim terminal
       -- window: when run inside a terminal multiplexer, new sessions will be created in a new tab
@@ -185,6 +190,9 @@ end
 ---@param opts? sidekick.Config
 function M.setup(opts)
   config = vim.tbl_deep_extend("force", {}, vim.deepcopy(defaults), opts or {})
+  if type(config.cli.mux.backend) == "function" then
+    config.cli.mux.backend = config.cli.mux.backend()
+  end
 
   vim.api.nvim_create_user_command("Sidekick", function(args)
     require("sidekick.commands").cmd(args)
@@ -222,7 +230,7 @@ function M.setup(opts)
     require("sidekick.status").setup()
 
     M.validate("cli.win.layout", { "float", "left", "bottom", "top", "right" })
-    M.validate("cli.mux.backend", { "tmux", "zellij" })
+    M.validate("cli.mux.backend", { "tmux", "zellij", "wezterm" })
     M.validate("cli.mux.create", { "terminal", "window", "split" })
     M.validate("nes.diff.show", { "always", "cursor" })
   end)

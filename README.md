@@ -300,6 +300,7 @@ local defaults = {
         hide_ctrl_z   = { "<c-z>", "blur"      , mode = "nt", desc = "go back to the previous window without hiding the terminal" },
         prompt        = { "<c-p>", "prompt"    , mode = "t" , desc = "insert prompt or context" },
         stopinsert    = { "<c-q>", "stopinsert", mode = "t" , desc = "enter normal mode" },
+        normal_cr     = { "<cr>" , "insert_cr" , mode = "n" , desc = "send <cr> to the terminal and enter normal mode" },
         -- Navigate windows in terminal mode. Only active when:
         -- * layout is not "float"
         -- * there is another window in the direction
@@ -314,10 +315,15 @@ local defaults = {
       --- Defaults to `vim.cmd.wincmd`. Used by the `nav_*` keymaps.
       nav = nil,
     },
+
     ---@class sidekick.cli.Mux
-    ---@field backend? "tmux"|"zellij" Multiplexer backend to persist CLI sessions
+    ---@field backend? "tmux"|"zellij"|"wezterm"|fun():string Multiplexer backend to persist CLI sessions
     mux = {
-      backend = vim.env.ZELLIJ and "zellij" or "tmux", -- default to tmux unless zellij is detected
+      -- zellij when running inside it, otherwise tmux, or wezterm when tmux is not installed
+      backend = vim.env.ZELLIJ and "zellij"
+        or vim.fn.executable("tmux") == 1 and "tmux"
+        or vim.fn.executable("wezterm") == 1 and "wezterm"
+        or "tmux",
       enabled = false,
       -- terminal: new sessions will be created for each CLI tool and shown in a Neovim terminal
       -- window: when run inside a terminal multiplexer, new sessions will be created in a new tab
@@ -328,6 +334,9 @@ local defaults = {
         vertical = true, -- vertical or horizontal split
         size = 0.5, -- size of the split (0-1 for percentage)
       },
+      -- max lines to capture when dumping a multiplexer pane for scrollback support
+      -- more lines means slower loading of the scrollback
+      dump = 2000,
     },
     --- Actual cli tool config is loaded from the runtime path `sk/cli/{tool}.lua` and merged with the config below.
     --- For default configs, see https://github.com/folke/sidekick.nvim/tree/main/sk/cli
