@@ -20,7 +20,7 @@ without leaving your editor.
   - 📦 **Pre-configured for Popular Tools**: Out-of-the-box support for Claude, Gemini, Grok, Codex, Copilot CLI, and more.
   - ✨ **Context-Aware Prompts**: Automatically include file content, cursor position, and diagnostics in your prompts.
   - 📝 **Prompt Library**: A library of pre-defined prompts for common tasks like explaining code, fixing issues, or writing tests.
-  - 🔄 **Session Persistence**: Keep your CLI sessions alive with `tmux` and `zellij` integration.
+  - 🔄 **Session Persistence**: Keep your CLI sessions alive with `tmux`, `zellij`, `wezterm` and `herdr` integration.
   - 📂 **Automatic File Watching**: Automatically reloads files in Neovim when they are modified by AI tools.
 
 - **🔌 Extensible and Customizable**
@@ -317,10 +317,12 @@ local defaults = {
     },
 
     ---@class sidekick.cli.Mux
-    ---@field backend? "tmux"|"zellij"|"wezterm"|fun():string Multiplexer backend to persist CLI sessions
+    ---@field backend? "tmux"|"zellij"|"wezterm"|"herdr"|fun():string Multiplexer backend to persist CLI sessions
     mux = {
-      -- zellij when running inside it, otherwise tmux, or wezterm when tmux is not installed
-      backend = vim.env.ZELLIJ and "zellij"
+      -- herdr or zellij when running inside it, otherwise tmux,
+      -- or wezterm when tmux is not installed
+      backend = vim.env.HERDR_PANE_ID and "herdr"
+        or vim.env.ZELLIJ and "zellij"
         or vim.fn.executable("tmux") == 1 and "tmux"
         or vim.fn.executable("wezterm") == 1 and "wezterm"
         or "tmux",
@@ -329,6 +331,7 @@ local defaults = {
       -- window: when run inside a terminal multiplexer, new sessions will be created in a new tab
       -- split: when run inside a terminal multiplexer, new sessions will be created in a new split
       -- NOTE: zellij only supports `terminal`
+      -- NOTE: wezterm and herdr never run embedded, so `terminal` behaves like `split`
       create = "terminal", ---@type "terminal"|"window"|"split"
       split = {
         vertical = true, -- vertical or horizontal split
@@ -932,18 +935,24 @@ Use them together for the complete experience!
 
 ### Terminal sessions not persisting?
 
-Make sure you have tmux or zellij installed and enable the multiplexer:
+Make sure you have a supported multiplexer installed and enable it:
 
 ```lua
 opts = {
   cli = {
     mux = {
       enabled = true,
-      backend = "tmux", -- or "zellij"
+      backend = "tmux", -- or "zellij", "wezterm", "herdr"
     },
   },
 }
 ```
+
+`wezterm` and `herdr` always run their sessions in a pane of the multiplexer
+itself, so `mux.create = "terminal"` behaves like `"split"` for those backends.
+With `herdr`, sessions are created with `herdr pane split` (or `herdr tab create`
+when `mux.create = "window"`), and every herdr pane running a known AI CLI is
+picked up by `:Sidekick cli`, even when it was started outside of Neovim.
 
 ### Do I need a GitHub Copilot subscription?
 

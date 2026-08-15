@@ -83,10 +83,12 @@ local defaults = {
     },
 
     ---@class sidekick.cli.Mux
-    ---@field backend? "tmux"|"zellij"|"wezterm"|fun():string Multiplexer backend to persist CLI sessions
+    ---@field backend? "tmux"|"zellij"|"wezterm"|"herdr"|fun():string Multiplexer backend to persist CLI sessions
     mux = {
-      -- zellij when running inside it, otherwise tmux, or wezterm when tmux is not installed
-      backend = vim.env.ZELLIJ and "zellij"
+      -- herdr or zellij when running inside it, otherwise tmux,
+      -- or wezterm when tmux is not installed
+      backend = vim.env.HERDR_PANE_ID and "herdr"
+        or vim.env.ZELLIJ and "zellij"
         or vim.fn.executable("tmux") == 1 and "tmux"
         or vim.fn.executable("wezterm") == 1 and "wezterm"
         or "tmux",
@@ -95,6 +97,7 @@ local defaults = {
       -- window: when run inside a terminal multiplexer, new sessions will be created in a new tab
       -- split: when run inside a terminal multiplexer, new sessions will be created in a new split
       -- NOTE: zellij only supports `terminal`
+      -- NOTE: wezterm and herdr never run embedded, so `terminal` behaves like `split`
       create = "terminal", ---@type "terminal"|"window"|"split"
       split = {
         vertical = true, -- vertical or horizontal split
@@ -230,7 +233,7 @@ function M.setup(opts)
     require("sidekick.status").setup()
 
     M.validate("cli.win.layout", { "float", "left", "bottom", "top", "right" })
-    M.validate("cli.mux.backend", { "tmux", "zellij", "wezterm" })
+    M.validate("cli.mux.backend", { "tmux", "zellij", "wezterm", "herdr" })
     M.validate("cli.mux.create", { "terminal", "window", "split" })
     M.validate("nes.diff.show", { "always", "cursor" })
   end)

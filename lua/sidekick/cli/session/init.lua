@@ -125,6 +125,7 @@ function M.setup()
     tmux = "sidekick.cli.session.tmux",
     zellij = "sidekick.cli.session.zellij",
     wezterm = "sidekick.cli.session.wezterm",
+    herdr = "sidekick.cli.session.herdr",
   }
   for name, mod in pairs(session_backends) do
     if vim.fn.executable(name) == 1 then
