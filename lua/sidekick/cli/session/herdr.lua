@@ -12,9 +12,10 @@ M.__index = M
 ---@param opts? { notify?:boolean }
 ---@return table? result
 local function api(args, opts)
+  opts = opts or {}
   local cmd = { "herdr" } ---@type string[]
   vim.list_extend(cmd, args)
-  local _, out = Util.exec(cmd, { notify = opts and opts.notify == true })
+  local _, out = Util.exec(cmd, { notify = opts.notify == true })
   local ok, data = pcall(vim.json.decode, out or "")
   return ok and type(data) == "table" and type(data.result) == "table" and data.result or nil
 end
