@@ -393,6 +393,7 @@ function M:focus()
     return self
   end
   vim.api.nvim_set_current_win(self.win)
+  vim.fn.winrestview({ leftcol = 0 })
   vim.cmd.startinsert()
   self.normal_mode = false
   return self

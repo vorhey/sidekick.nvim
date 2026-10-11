@@ -68,11 +68,39 @@ function M.setup()
   ---@param fn fun(ev:vim.api.keyset.create_autocmd.callback_args)
   local function on(events, fn)
     for _, event in ipairs(events) do
-      local name, pattern = event:match("^(%S+)%s*(.*)$") --[[@as string, string]]
+      -- For "TextChanged" we use LspNotify didChange events to ensure proper
+      -- buffer versioning. This is because the LSP server may not have processed
+      -- the change yet when the TextChanged event fires.
+      local e = (event == "TextChanged" or event == "TextChangedI") and "LspNotify" or event
+      local name, pattern = e:match("^(%S+)%s*(.*)$") --[[@as string, string]]
       vim.api.nvim_create_autocmd(name, {
         pattern = pattern ~= "" and pattern or nil,
         group = Config.augroup,
-        callback = fn,
+        callback = function(ev)
+          if e == "LspNotify" then
+            local data = ev.data
+            ---@cast data vim.event.lspnotify.data
+            local client = vim.lsp.get_client_by_id(data.client_id)
+
+            if not (client and Config.is_copilot(client)) then
+              return -- Not Copilot
+            end
+
+            if data.method ~= "textDocument/didChange" then
+              return -- Not a didChange notification
+            end
+
+            if vim.lsp.util.buf_versions[ev.buf] ~= data.params.textDocument.version then
+              return -- Outdated buffer version
+            end
+
+            local mode = event == "TextChanged" and "n" or "i"
+            if vim.fn.mode() ~= mode then
+              return --- Not in the correct mode
+            end
+          end
+          fn(ev)
+        end,
       })
     end
   end
@@ -126,8 +154,9 @@ local function is_enabled(buf)
 end
 
 -- Request new edits from the LSP server (if any)
-function M.update()
-  local buf = vim.api.nvim_get_current_buf()
+---@param ev? vim.api.keyset.create_autocmd.callback_args
+function M.update(ev)
+  local buf = ev and ev.buf or vim.api.nvim_get_current_buf()
   M.clear()
 
   if not is_enabled(buf) then
@@ -139,9 +168,20 @@ function M.update()
     return
   end
 
+  local evVersion = ev
+    and ev.data
+    and ev.data.params
+    and ev.data.params.textDocument
+    and ev.data.params.textDocument.version
+
+  local version = vim.lsp.util.buf_versions[buf]
+  if evVersion and evVersion ~= version then
+    return -- outdated request
+  end
+
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
   ---@diagnostic disable-next-line: inject-field
-  params.textDocument.version = vim.lsp.util.buf_versions[buf]
+  params.textDocument.version = version
   params.context = { triggerKind = 2 }
 
   local done = false
@@ -217,6 +257,14 @@ function M._handler(err, res, ctx)
   for _, edit in ipairs(res.edits or {}) do
     local e = require("sidekick.nes.edit").new(client, edit)
     if e:valid() and is_enabled(e.buf) then
+      ---@diagnostic disable-next-line: param-type-mismatch
+      client:notify("textDocument/didShowInlineEdit", {
+        item = {
+          command = {
+            arguments = edit.command.arguments,
+          },
+        },
+      })
       table.insert(M._edits, e)
     end
   end
