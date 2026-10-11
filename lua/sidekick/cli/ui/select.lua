@@ -7,11 +7,57 @@ local Util = require("sidekick.util")
 
 local M = {}
 
+M.request = 0 -- only the latest request may open a picker
+local queue = {} ---@type {show?:fun()}[] pending requests, in call order
+
 ---@param opts sidekick.cli.Select
 function M.select(opts)
   assert(type(opts) == "table", "opts must be a table")
-  local tools = require("sidekick.cli.state").get(opts.filter)
+  local State = require("sidekick.cli.state")
+  M.request = M.request + 1
+  local request = M.request
+  local filter = opts.filter or {}
+  if filter.attached then
+    return M.show(opts, State.get(filter), request)
+  end
 
+  local entry = {} ---@type {show?:fun()}
+  queue[#queue + 1] = entry
+  local sessions, installed, err
+  local function done()
+    if not installed or not (sessions or err) then
+      return
+    end
+    entry.show = function()
+      if sessions then
+        M.show(opts, State.get(opts.filter, sessions, installed), request)
+      elseif request == M.request then
+        Util.error(err)
+      end
+    end
+    -- finish requests in call order, so that queued sends can't overtake each other
+    while queue[1] and queue[1].show do
+      vim.schedule(table.remove(queue, 1).show)
+    end
+  end
+
+  local tools = Config.tools()
+  -- with a name filter, that's the only tool that can be listed
+  tools = filter.name and { [filter.name] = tools[filter.name] } or tools
+  require("sidekick.cli.installed").get(tools, function(result)
+    installed = result
+    done()
+  end)
+  require("sidekick.cli.session").sessions_async(function(result, e)
+    sessions, err = result, e
+    done()
+  end)
+end
+
+---@param opts sidekick.cli.Select
+---@param tools sidekick.cli.State[]
+---@param request? number
+function M.show(opts, tools, request)
   ---@param state? sidekick.cli.State
   local on_select = function(state)
     if state and not state.installed then
@@ -27,6 +73,8 @@ function M.select(opts)
   elseif #tools == 1 and opts.auto then
     on_select(tools[1])
     return
+  elseif request and request ~= M.request then
+    return -- superseded by a newer request, so don't stack pickers
   end
 
   ---@type snacks.picker.ui_select.Opts

@@ -7,7 +7,7 @@ M.__index = M
 M.priority = 20
 M.external = true
 
-function M.sessions()
+function M.sessions(_, ctx)
   local Procs = require("sidekick.cli.procs")
   local Util = require("sidekick.util")
 
@@ -43,7 +43,7 @@ function M.sessions()
         tool = "opencode",
         cwd = Procs.cwd(pid) or "",
         port = port,
-        pids = Procs.pids(pid),
+        pids = ctx and ctx.procs:pids(pid) or Procs.pids(pid),
         mux_session = tostring(pid),
         base_url = ("http://localhost:%d"):format(port),
       }

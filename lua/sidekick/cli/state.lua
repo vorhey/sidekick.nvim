@@ -65,12 +65,14 @@ function M.get_state(session)
 end
 
 ---@param filter? sidekick.cli.Filter
+---@param discovered? sidekick.cli.Session[] sessions to use instead of discovering them
+---@param installed? table<string, boolean> installed tools by name, instead of checking them
 ---@return sidekick.cli.State[]
-function M.get(filter)
+function M.get(filter, discovered, installed)
   filter = filter or {}
   local all = {} ---@type sidekick.cli.State[]
   local sids = {} ---@type table<string, boolean>
-  local sessions = filter.attached and Session.attached() or Session.sessions()
+  local sessions = discovered or (filter.attached and Session.attached() or Session.sessions())
 
   for _, s in pairs(sessions) do
     -- if not attached, skip if another session with higher priority
@@ -98,10 +100,13 @@ function M.get(filter)
     for name, tool in pairs(Config.tools()) do
       local sid = Session.sid({ tool = name })
       if not sids[sid] then
-        all[#all + 1] = {
-          tool = tool,
-          installed = vim.fn.executable(tool.cmd[1]) == 1,
-        }
+        local found ---@type boolean
+        if installed then
+          found = installed[name] == true
+        else
+          found = vim.fn.executable(tool.cmd[1]) == 1
+        end
+        all[#all + 1] = { tool = tool, installed = found }
       end
     end
   end

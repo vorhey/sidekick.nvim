@@ -165,15 +165,52 @@ function M.deprecate(deprecated, replacement)
   M.warn(("`%s` is deprecated.\nPlease use `%s` instead."):format(deprecated, replacement))
 end
 
+-- Only coroutines started here yield subprocess waits; other callers stay synchronous.
+local async = {} ---@type table<thread, fun(...)>
+
+---@param fn fun():any
+---@param done fun(ok:boolean, result:any)
+function M.async(fn, done)
+  local co
+  local function resume(...)
+    local ok, result = coroutine.resume(co, ...)
+    if not ok or coroutine.status(co) == "dead" then
+      async[co] = nil
+      done(ok, result)
+    end
+  end
+  co = coroutine.create(fn)
+  async[co] = resume
+  resume()
+end
+
 ---@param cmd string[]
----@param opts? vim.SystemOpts|{notify?:boolean}
+---@param opts? vim.SystemOpts|{notify?:boolean, codes?:integer[]} `codes`: accepted exit codes (default: `{ 0 }`)
 function M.exec(cmd, opts)
   opts = opts or {}
   opts.text = true
-  local result = vim.system(cmd, opts):wait()
-  if result.code ~= 0 or not result.stdout then
+  local name = table.concat(vim.tbl_map(tostring, cmd), " ")
+  local resume = async[coroutine.running()]
+  local result
+  if resume then
+    opts.timeout = opts.timeout or 3000
+    vim.system(cmd, opts, function(ret)
+      vim.schedule(function()
+        resume(ret)
+      end)
+    end)
+    result = coroutine.yield()
+    -- `vim.system` reports a timeout as exit code 124. That says nothing about
+    -- the command's output, so don't let callers mistake it for an empty result.
+    if result.code == 124 then
+      error(("Command timed out: `%s`"):format(name), 0)
+    end
+  else
+    result = vim.system(cmd, opts):wait()
+  end
+  if not vim.tbl_contains(opts.codes or { 0 }, result.code) or not result.stdout then
     if opts.notify ~= false then
-      M.error(("Command failed: `%s`\n%s"):format(table.concat(vim.tbl_map(tostring, cmd), " "), result.stderr or ""))
+      M.error(("Command failed: `%s`\n%s"):format(name, result.stderr or ""))
     end
     return nil
   end

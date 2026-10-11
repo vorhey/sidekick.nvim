@@ -26,11 +26,12 @@ function M.env(pid)
           env[k] = v
         end
       end
+      return env
     end
   end
 
   if not have_ps then
-    return
+    return env
   end
 
   -- try ps as a fallback (macOS and others)
@@ -198,6 +199,19 @@ function P:walk(pid, cb)
       ret[#ret + 1] = proc
     end
     vim.list_extend(todo, self._children[current] or {})
+  end
+  return ret
+end
+
+-- Use the existing process tree rather than asking Neovim for each descendant.
+---@param pid number
+---@return integer[]
+function P:pids(pid)
+  local ret = { pid }
+  local index = 1
+  while index <= #ret do
+    vim.list_extend(ret, self._children[ret[index]] or {})
+    index = index + 1
   end
   return ret
 end

@@ -121,20 +121,23 @@ function M.clients()
   return ret
 end
 
-function M.sessions()
+function M.sessions(_, ctx)
   local panes = M.panes()
   local ret = {} ---@type sidekick.cli.session.State[]
-  local tools = Config.tools()
+  if #panes == 0 then
+    return ret
+  end
+  local tools = ctx and ctx.tools or Config.tools()
 
   local clients = M.clients()
 
   local Procs = require("sidekick.cli.procs")
-  local procs = Procs.new()
+  local procs = ctx and ctx.procs or Procs.new()
   for _, pane in ipairs(panes) do
     procs:walk(pane.pid, function(proc)
       for _, tool in pairs(tools) do
         if tool:is_proc(proc) then
-          local pids = Procs.pids(pane.pid)
+          local pids = procs:pids(pane.pid)
           vim.list_extend(pids, clients[pane.session_id] or {})
           ret[#ret + 1] = {
             id = pane.skid,

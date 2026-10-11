@@ -135,12 +135,28 @@ function M.setup()
   M.register("terminal", require("sidekick.cli.terminal"))
 end
 
-function M.sessions()
+---@class sidekick.cli.session.Context
+---@field tools table<string, sidekick.cli.Tool>
+---@field procs sidekick.cli.Procs
+---@field attached string[] ids of the sessions that were attached when discovery started
+
+-- One snapshot and one set of tool definitions per discovery, with no stale cache.
+---@return sidekick.cli.session.Context
+local function context()
+  local ctx = { tools = Config.tools(), attached = vim.tbl_keys(M._attached) }
+  ctx.procs = require("sidekick.cli.procs").new()
+  return ctx
+end
+
+---@param ctx? sidekick.cli.session.Context
+---@param discovered? table<string, sidekick.cli.session.State[]> sessions per backend, when already discovered
+function M.sessions(ctx, discovered)
   M.setup()
+  ctx = ctx or context()
   local ret = {} ---@type sidekick.cli.Session[]
   local ids = {} ---@type table<string,boolean>
   for name, backend in pairs(M.backends) do
-    for _, s in pairs(backend:sessions()) do
+    for _, s in pairs(discovered and discovered[name] or backend:sessions(ctx)) do
       s.backend = name
       s.started = true
       ret[#ret + 1] = M.new(s)
@@ -151,12 +167,66 @@ function M.sessions()
       end
     end
   end
-  for id in pairs(M._attached) do
-    if not ids[id] then -- session is no longer running
-      M.detach(M._attached[id])
+  -- a session that was attached while discovery was pending is not part of
+  -- the results, so only check the ones that were attached when it started
+  for _, id in ipairs(ctx.attached) do
+    local session = M._attached[id]
+    if session and not ids[id] then -- session is no longer running
+      M.detach(session)
     end
   end
   return ret
+end
+
+local discovering ---@type (fun(sessions?:sidekick.cli.Session[], err?:string))[]?
+
+---@param cb fun(sessions?:sidekick.cli.Session[], err?:string)
+function M.sessions_async(cb)
+  M.setup()
+  if discovering then
+    discovering[#discovering + 1] = cb
+    return
+  end
+  discovering = { cb }
+  local function done(sessions, err)
+    local callbacks = discovering
+    discovering = nil
+    for _, callback in ipairs(callbacks) do
+      vim.schedule(function()
+        callback(sessions, err)
+      end)
+    end
+  end
+  Util.async(context, function(ok, ctx)
+    if not ok then
+      done(nil, tostring(ctx))
+      return
+    end
+    local results, pending, failure = {}, vim.tbl_count(M.backends), nil
+    if pending == 0 then
+      done({})
+      return
+    end
+    for name, backend in pairs(M.backends) do
+      Util.async(function()
+        return backend:sessions(ctx)
+      end, function(success, result)
+        results[name] = success and result or {}
+        failure = failure or (not success and tostring(result) or nil)
+        pending = pending - 1
+        if pending == 0 then
+          if failure then
+            done(nil, failure)
+          else
+            -- A terminal may have been opened while external discovery was pending.
+            results.terminal = M.backends.terminal and M.backends.terminal:sessions() or nil
+            local valid, sessions = pcall(M.sessions, ctx, results)
+            done(valid and sessions or nil, not valid and tostring(sessions) or nil)
+          end
+        end
+      end)
+    end
+  end)
 end
 
 ---@param session sidekick.cli.Session

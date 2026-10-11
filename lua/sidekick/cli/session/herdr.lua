@@ -140,16 +140,16 @@ function M:is_running()
   return self.herdr_pid ~= nil and vim.api.nvim_get_proc(self.herdr_pid) ~= nil
 end
 
-function M.sessions()
+function M.sessions(_, ctx)
   local panes = M.panes()
   local ret = {} ---@type sidekick.cli.session.State[]
   if vim.tbl_isempty(panes) then
     return ret
   end
-  local tools = Config.tools()
+  local tools = ctx and ctx.tools or Config.tools()
 
   local Procs = require("sidekick.cli.procs")
-  local procs = Procs.new()
+  local procs = ctx and ctx.procs or Procs.new()
 
   local seen = {} ---@type table<string, boolean>
   -- the pane running this Neovim never hosts one of its own sessions.
@@ -171,7 +171,7 @@ function M.sessions()
             herdr_pane_id = pane.pane_id,
             herdr_pid = proc.pid,
             mux_session = pane.tab_id,
-            pids = Procs.pids(proc.pid),
+            pids = procs:pids(proc.pid),
           }
         end
         break

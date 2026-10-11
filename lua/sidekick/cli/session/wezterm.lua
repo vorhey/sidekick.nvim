@@ -81,16 +81,33 @@ function M:add_cmd(ret)
   vim.list_extend(ret, self.tool.cmd)
 end
 
---- wezterm's list output doesn't include the pane's pid,
---- so resolve it from the pane's tty with lsof
----@param tty_name? string
----@return number?
-local function tty_pid(tty_name)
-  local tty = tty_name and tty_name:match("/dev/(pts/%d+)")
-  if tty then
-    local lines = Util.exec({ "lsof", "-t", "/dev/" .. tty }, { notify = false })
-    return lines and tonumber(lines[1]) or nil
+-- Resolve missing pane PIDs in one lsof invocation instead of one per pane.
+---@param panes table[]
+---@return table<string,number>
+local function tty_pids(panes)
+  local cmd, seen = { "lsof", "-Fpn" }, {}
+  for _, pane in ipairs(panes) do
+    local tty = not pane.pid and pane.tty_name
+    if type(tty) == "string" and tty:match("^/dev/") and not seen[tty] then
+      seen[tty] = true
+      cmd[#cmd + 1] = tty
+    end
   end
+  local ret = {} ---@type table<string,number>
+  if #cmd == 2 then
+    return ret
+  end
+  local pid
+  -- lsof exits with 1 when any of the ttys has no match, but still lists the others
+  for _, line in ipairs(Util.exec(cmd, { notify = false, codes = { 0, 1 } }) or {}) do
+    if line:match("^p%d+$") then
+      pid = tonumber(line:sub(2))
+    elseif pid and line:sub(1, 1) == "n" then
+      local tty = line:sub(2)
+      ret[tty] = ret[tty] or pid
+    end
+  end
+  return ret
 end
 
 ---@param opts? { notify?:boolean }
@@ -99,12 +116,14 @@ function M.panes(opts)
   opts = opts or {}
   local _, output = Util.exec({ "wezterm", "cli", "list", "--format", "json" }, { notify = opts.notify == true })
   local ok, data = pcall(vim.json.decode, output or "")
+  data = ok and type(data) == "table" and data or {}
+  local pids = tty_pids(data)
   local panes = {} ---@type sidekick.wezterm.Pane[]
-  for _, pane in ipairs(ok and data or {}) do
+  for _, pane in ipairs(data) do
     ---@class sidekick.wezterm.Pane
     panes[#panes + 1] = {
       skid = ("wezterm %d"):format(pane.pane_id), -- unique id for the pane
-      pid = pane.pid or tty_pid(pane.tty_name), -- process id of the pane
+      pid = pane.pid or pids[pane.tty_name], -- process id of the pane
       pane_id = tostring(pane.pane_id),
       tab_id = tostring(pane.tab_id),
       window_id = tostring(pane.window_id),
@@ -114,13 +133,16 @@ function M.panes(opts)
   return panes
 end
 
-function M.sessions()
+function M.sessions(_, ctx)
   local panes = M.panes()
   local ret = {} ---@type sidekick.cli.session.State[]
-  local tools = Config.tools()
+  if #panes == 0 then
+    return ret
+  end
+  local tools = ctx and ctx.tools or Config.tools()
 
   local Procs = require("sidekick.cli.procs")
-  local procs = Procs.new()
+  local procs = ctx and ctx.procs or Procs.new()
   for _, pane in ipairs(panes) do
     procs:walk(pane.pid, function(proc)
       for _, tool in pairs(tools) do
@@ -132,7 +154,7 @@ function M.sessions()
             wezterm_pane_id = pane.pane_id,
             wezterm_pid = pane.pid,
             mux_session = pane.tab_id,
-            pids = Procs.pids(pane.pid),
+            pids = procs:pids(pane.pid),
           }
           return true
         end
