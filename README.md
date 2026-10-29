@@ -245,7 +245,7 @@ local defaults = {
     enabled = function(buf)
       return vim.g.sidekick_nes ~= false and vim.b.sidekick_nes ~= false
     end,
-    debounce = 100,
+    debounce = 300,
     trigger = {
       -- events that trigger sidekick next edit suggestions
       events = { "ModeChanged i:n", "TextChanged", "User SidekickNesDone" },
@@ -330,7 +330,7 @@ local defaults = {
       -- terminal: new sessions will be created for each CLI tool and shown in a Neovim terminal
       -- window: when run inside a terminal multiplexer, new sessions will be created in a new tab
       -- split: when run inside a terminal multiplexer, new sessions will be created in a new split
-      -- NOTE: zellij only supports `terminal`
+      -- NOTE: zellij supports `terminal` and `window` (tabs require Zellij 0.45.1+)
       -- NOTE: wezterm and herdr never run embedded, so `terminal` behaves like `split`
       create = "terminal", ---@type "terminal"|"window"|"split"
       split = {
@@ -489,7 +489,8 @@ require("sidekick.nes").toggle()
 
 
 ```lua
-require("sidekick.nes").update()
+---@param ev? vim.api.keyset.create_autocmd.callback_args
+require("sidekick.nes").update(ev)
 ```
 
 </td></tr>
